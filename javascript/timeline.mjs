@@ -35,6 +35,7 @@ class Timeline {
     this._bubble_rad_max = 120;
     this._last_fit = new Date().getTime();
     this._date_label_offset = $('.label-start').offset().left / canvas.width;
+    this._minimap_markers = [];
 
     this.Zoom(21, canvas.width / 2);
 
@@ -91,6 +92,26 @@ class Timeline {
     const zoom = (this.date_last.year - this.date_first.year) / (this._scroll_max.year - this._scroll_min.year) * 100 + '%';
     const left = (this.date_first.year - this._scroll_min.year) / (this._scroll_max.year - this._scroll_min.year) * 100 + '%';
     $('.minimap > .select').css({width: zoom, 'margin-left': left});
+
+    for (let i = this._minimap_markers.length - 1; i >= 0; i--) {
+      app.stage.removeChild(this._minimap_markers[i]);
+      this._AddMinimapMarker(this._minimap_markers.splice(i, 1)[0].date);
+    }
+  }
+
+  //
+  // Add event marker top minimap
+  //
+  _AddMinimapMarker(date) {
+    const marker = new Graphics();
+    this._minimap_markers.push(marker);
+    marker.date = date;
+    marker.lineStyle(2, 0x595755, 1);
+    let pos = $('.minimap').offset().left + 1 + ($('.minimap').outerWidth() - 2) *
+    ( (date.year - this._time_start.year) / (this._time_end.year - this._time_start.year) );
+    marker.moveTo(pos, $('.minimap').offset().top - 2);
+    marker.lineTo(pos, $('.minimap').offset().top + $('.minimap').outerHeight() + 2);
+    app.stage.addChild(marker);
   }
 
   /*
@@ -128,16 +149,18 @@ class Timeline {
     }
 
     app.stage.addChild(timepoint._date_label);
+
+    this._AddMinimapMarker(timepoint.date);
   }
 
   //
   // Render Bubble
   //
-  _RenderBubble(event, radius, border_width, position) {
+  _RenderBubble(event, radius, border_width, fill_color = color.fill) {
     app.stage.removeChild(event._bubble);
     event._bubble = new Graphics;
     event._bubble.lineStyle(border_width, color.line, 1);
-    event._bubble.beginFill(color.fill);
+    event._bubble.beginFill(fill_color);
     event._bubble.drawCircle(0, 0, radius);
     event._bubble.position = this._GetDatePosition(event.date);
     event._bubble.endFill();
@@ -181,8 +204,12 @@ class Timeline {
 
     // set non colliding bubbles to min distance
     events.forEach(event => {
-      if (!collisions.includes(event))
-        this._RenderBubble(event, dist_min / 2, 2)
+      if (!collisions.includes(event)) {
+        if (event.illustration)
+          this._RenderBubble(event, dist_min / 2, 2);
+        else
+          this._RenderBubble(event, this._bubble_rad_min / 2, 2, color.line);
+      }
     });
 
     // create array of colliding events
@@ -192,15 +219,18 @@ class Timeline {
     const bubble_off = 40;
     if (collisions.length > 0) {
       for (let i in collisions) {
-        this._RenderBubble(collisions[i], this._bubble_rad_min, 2);
-        collisions[i]._bubble.position.y = this._line.position.y + bubble_off * (i % 2 ? 1 : -1);
+        if (collisions[i].illustration)
+          this._RenderBubble(collisions[i], this._bubble_rad_min, 2);
+        else
+          this._RenderBubble(collisions[i], this._bubble_rad_min / 2, 2, color.line);
+        collisions[i]._bubble.position.y = this._line.position.y + bubble_off * (collisions[i].illustration ? 1 : 0.8) * (i % 2 ? 1 : -1);
       }
     }
 
     // reposition date label
     events.forEach(event => {
       event._date_label.position.y = event._bubble.position.y +
-        (event._bubble.radius + 20) * (event._bubble.position.y >= this._line.position.y ? 1 : -1);
+        (event._bubble.radius + 20) * (event._bubble.position.y >= this._line.position.y - 10 ? 1 : -1);
     })
 
   }
@@ -264,6 +294,7 @@ class Timeline {
         event.illustration.position = event._bubble.position;
         this._FitTexture(event);
       }
+      this.Resize();
     })
   }
 
@@ -300,8 +331,14 @@ class Timeline {
     if (this._events.length < 2)
       return;
     for (let i = 1; i < this._events.length; i++) {
-      let l1 = this._events[this._events.length - 1]._date_label;
-      let l2 = this._events[this._events.length - 2]._date_label;
+      const l1 = this._events[i]._date_label;
+      const l2 = this._events[i-1]._date_label;
+      if (this._events[i]._bubble.position.y > this._line.position.y != this._events[i-1]._bubble.position.y > this._line.position.y) {
+        l1.visible = true;
+        l2.visible = true;
+        console.log(this._events[i-1].name + ' & ' + this._events[i].name);
+        continue
+      };
       l1.visible = (l2.visible && l1.position.x - l1.width / 2 <= l2.position.x + l2.width / 2)
         ? false
         : true;
